@@ -1,0 +1,422 @@
+/* Estilos personalizados para o painel tSeca - Design Moderno */
+
+/* Animações customizadas */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse-green {
+  0%, 100% {
+    background: linear-gradient(135deg, #10b981, #059669);
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+  }
+  50% {
+    background: linear-gradient(135deg, #059669, #047857);
+    box-shadow: 0 0 30px rgba(16, 185, 129, 0.5);
+  }
+}
+
+@keyframes pulse-red {
+  0%, 100% {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+  }
+  50% {
+    background: linear-gradient(135deg, #dc2626, #b91c1c);
+    box-shadow: 0 0 30px rgba(239, 68, 68, 0.5);
+  }
+}
+
+@keyframes pulse-blue {
+  0%, 100% {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  }
+  50% {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(59, 130, 246, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+  }
+}
+
+/* Classes utilitárias */
+.animate-fade-in {
+  animation: fadeIn 0.6s ease-out;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.4s ease-out;
+}
+
+.pulse-green {
+  animation: pulse-green 2s infinite;
+}
+
+.pulse-red {
+  animation: pulse-red 2s infinite;
+}
+
+.pulse-blue {
+  animation: pulse-blue 2s infinite;
+}
+
+.float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Melhorias para responsividade */
+@media (max-width: 640px) {
+  .text-4xl {
+    font-size: 1.5rem;
+  }
+  
+  .text-2xl {
+    font-size: 1.25rem;
+  }
+  
+  .text-xl {
+    font-size: 1.125rem;
+  }
+  
+  .p-6 {
+    padding: 1rem;
+  }
+  
+  .p-8 {
+    padding: 1.25rem;
+  }
+  
+  .gap-6 {
+    gap: 1rem;
+  }
+  
+  .gap-8 {
+    gap: 1.25rem;
+  }
+}
+
+/* Melhorias para acessibilidade */
+button:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+input:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+select:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Melhorias para performance */
+* {
+  box-sizing: border-box;
+}
+
+/* Melhorias para animações suaves */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 200ms;
+}
+
+/* Melhorias para loading states */
+.loading-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.glow {
+  animation: glow 2s ease-in-out infinite;
+}
+
+/* Estados de status */
+.status-online {
+  @apply bg-green-500;
+  animation: pulse-green 2s infinite;
+}
+
+.status-offline {
+  @apply bg-red-500;
+  animation: pulse-red 2s infinite;
+}
+
+.status-connecting {
+  @apply bg-yellow-500;
+  animation: pulse 2s infinite;
+}
+
+/* Melhorias de UX */
+button:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
+}
+
+select:focus {
+  outline: none;
+}
+
+input:focus {
+  outline: none;
+}
+
+/* Efeitos de hover aprimorados */
+.hover-lift {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+}
+
+/* Glassmorphism */
+.glass {
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+/* Responsividade customizada */
+@media (max-width: 768px) {
+  .grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .header-content {
+    flex-direction: column;
+    text-align: center;
+    gap: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 {
+    grid-template-columns: 1fr;
+  }
+  
+  .main-content {
+    padding: 1rem;
+  }
+}
+
+/* Loading states */
+.loading {
+  position: relative;
+  pointer-events: none;
+}
+
+.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border: 3px solid transparent;
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Smooth transitions */
+* {
+  transition: color 0.3s ease, background-color 0.3s ease, border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Status indicators */
+.status-indicator {
+  position: relative;
+  overflow: hidden;
+}
+
+.status-indicator::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.status-indicator:hover::before {
+  opacity: 1;
+}
+
+/* Gradientes personalizados */
+.gradient-text {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-border {
+  position: relative;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 2px;
+  border-radius: 1rem;
+}
+
+.gradient-border > * {
+  background: white;
+  border-radius: calc(1rem - 2px);
+}
+
+/* Efeitos de partículas */
+.particle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: rgba(59, 130, 246, 0.6);
+  border-radius: 50%;
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Scrollbar personalizada */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #5a67d8, #6b46c1);
+}
+
+/* Seleção de texto */
+::selection {
+  background: rgba(59, 130, 246, 0.3);
+  color: #1e293b;
+}
+
+/* Foco aprimorado para acessibilidade */
+.focus-visible:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Animações de entrada para cards */
+.card-enter {
+  opacity: 0;
+  transform: translateY(20px) scale(0.95);
+  animation: fadeIn 0.6s ease-out forwards;
+}
+
+.card-enter:nth-child(1) { animation-delay: 0.1s; }
+.card-enter:nth-child(2) { animation-delay: 0.2s; }
+.card-enter:nth-child(3) { animation-delay: 0.3s; }
+.card-enter:nth-child(4) { animation-delay: 0.4s; }
+
+/* Efeitos de hover para ícones */
+.icon-hover {
+  transition: all 0.3s ease;
+}
+
+.icon-hover:hover {
+  transform: scale(1.1) rotate(5deg);
+}
+
+/* Notificações aprimoradas */
+.notification-enter {
+  animation: slideIn 0.4s ease-out;
+}
+
+.notification-exit {
+  animation: slideIn 0.4s ease-out reverse;
+}
+
+/* Estados de erro e sucesso */
+.success-glow {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+}
+
+.error-glow {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+}
+
+/* Efeitos de profundidade */
+.depth-1 {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+}
+
+.depth-2 {
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+}
+
+.depth-3 {
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.19), 0 6px 6px rgba(0, 0, 0, 0.23);
+}
+
+.depth-4 {
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.25), 0 10px 10px rgba(0, 0, 0, 0.22);
+}
+
+.depth-5 {
+  box-shadow: 0 19px 38px rgba(0, 0, 0, 0.30), 0 15px 12px rgba(0, 0, 0, 0.22);
+}

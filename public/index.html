@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>tSeca Control - Controle Remoto ESP8266</title>
+    
+    <!-- ✅ Tailwind CSS CDN (Principal) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- ✅ Tailwind CSS CDN (Fallback) -->
+    <script>
+      // Fallback se o CDN principal falhar
+      if (typeof window.tailwind === 'undefined') {
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/tailwindcss@^3/dist/tailwind.min.js';
+        document.head.appendChild(script);
+      }
+    </script>
+    
+    <!-- ✅ CSS Personalizado -->
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- ✅ Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-white min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center shadow-md">
+                        <span class="text-white font-bold text-xl">ts</span>
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">tSeca Control</h1>
+                        <p class="text-sm text-gray-600">Controle Remoto ESP8266</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-3 h-3 bg-red-500 rounded-full"></div>
+                        <span class="text-sm text-gray-600">Offline</span>
+                    </div>
+                    <a href="/config.html" class="text-gray-600 hover:text-gray-900 transition-colors p-2 rounded-lg hover:bg-gray-100">
+                        <i class="fas fa-cog text-lg"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        <!-- Status Cards - Top Row -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <!-- Temperatura -->
+            <div class="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-semibold text-gray-600 mb-2 flex items-center">
+                            <i class="fas fa-thermometer-half mr-2 text-orange-500"></i>Temperatura
+                        </p>
+                        <p id="temperatura" class="text-3xl font-bold text-orange-500">--°C</p>
+                    </div>
+                    <div class="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-fire text-xl text-orange-500"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Umidade -->
+            <div class="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-semibold text-gray-600 mb-2 flex items-center">
+                            <i class="fas fa-tint mr-2 text-blue-500"></i>Umidade
+                        </p>
+                        <p id="umidade" class="text-3xl font-bold text-blue-500">--%</p>
+                    </div>
+                    <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-tint text-xl text-blue-500"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Aquecedor -->
+            <div class="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-semibold text-gray-600 mb-2 flex items-center">
+                            <i class="fas fa-fire mr-2 text-red-500"></i>Aquecedor
+                        </p>
+                        <p id="status-aquecedor" class="text-xl font-bold text-gray-800">Offline</p>
+                    </div>
+                    <div id="aquecedor-icon" class="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-times text-2xl text-red-500"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tempo Restante -->
+            <div class="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-semibold text-gray-600 mb-2 flex items-center">
+                            <i class="fas fa-clock mr-2 text-purple-500"></i>Tempo Restante
+                        </p>
+                        <p id="tempo-restante" class="text-xl font-bold text-gray-800">-- min</p>
+                    </div>
+                    <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-clock text-xl text-purple-500"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Control Buttons - Middle Row -->
+        <div class="bg-white rounded-lg shadow-md border border-gray-200 p-6 mb-8">
+            <h2 class="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+                <i class="fas fa-fire mr-3 text-orange-600"></i>Controle do Aquecedor
+            </h2>
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <button 
+                    id="btn-25" 
+                    class="bg-green-500 hover:bg-green-600 text-white font-semibold py-4 px-6 rounded-lg transition-colors text-lg">
+                    <i class="fas fa-play mr-2"></i>25 min
+                </button>
+                <button 
+                    id="btn-60" 
+                    class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-6 rounded-lg transition-colors text-lg">
+                    <i class="fas fa-play mr-2"></i>60 min
+                </button>
+                <button 
+                    id="btn-120" 
+                    class="bg-purple-500 hover:bg-purple-600 text-white font-semibold py-4 px-6 rounded-lg transition-colors text-lg">
+                    <i class="fas fa-play mr-2"></i>120 min
+                </button>
+                <button 
+                    id="btn-desligar" 
+                    class="bg-red-500 hover:bg-red-600 text-white font-semibold py-4 px-6 rounded-lg transition-colors text-lg">
+                    <i class="fas fa-stop mr-2"></i>Desligar
+                </button>
+            </div>
+        </div>
+
+        <!-- Status do Cooler - Bottom Row -->
+        <div class="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+            <h2 class="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <i class="fas fa-snowflake mr-3 text-blue-600"></i>Status do Cooler
+            </h2>
+            <div class="flex items-center space-x-4">
+                <div id="cooler-icon" class="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-snowflake text-xl text-gray-400"></i>
+                </div>
+                <div>
+                    <p id="status-cooler" class="text-xl font-bold text-gray-800">Offline</p>
+                    <p class="text-sm text-gray-600">Status automático baseado na temperatura</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
+            <div class="flex items-center space-x-4">
+                <div class="animate-spin rounded-full h-6 w-6 border-4 border-blue-600 border-t-transparent"></div>
+                <span class="text-gray-700 font-medium">Processando...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div id="notification" class="fixed top-4 right-4 max-w-sm w-full mx-4 transform translate-x-full transition-transform duration-300 z-40">
+        <div class="bg-white rounded-lg shadow-xl border border-gray-100 p-4">
+            <div class="flex items-center space-x-3">
+                <div id="notification-icon" class="w-6 h-6 rounded-full flex items-center justify-center">
+                    <i class="fas fa-check text-xs"></i>
+                </div>
+                <div class="flex-1">
+                    <p id="notification-message" class="text-sm font-semibold text-gray-900"></p>
+                </div>
+                <button onclick="hideNotification()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                    <i class="fas fa-times text-base"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

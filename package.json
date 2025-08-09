@@ -1,0 +1,33 @@
+{
+  "name": "tseca-control-panel",
+  "version": "1.0.0",
+  "description": "Painel de controle para dispositivo ESP8266 tSeca",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "dev:safe": "node scripts/start-server.js",
+    "test": "jest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.1.5",
+    "compression": "^1.7.4",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0",
+    "jest": "^29.7.0",
+    "eslint": "^8.56.0",
+    "supertest": "^6.3.3"
+  },
+  "keywords": ["esp8266", "iot", "control-panel", "nodejs"],
+  "author": "",
+  "license": "MIT"
+}
