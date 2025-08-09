@@ -271,7 +271,8 @@ class tSecaController {
     const statusAquecedorEl = document.getElementById('status-aquecedor');
     const aquecedorIconEl = document.getElementById('aquecedor-icon');
     if (statusAquecedorEl && aquecedorIconEl) {
-      const isOn = data.ativo === true;
+      const estado = data.estado || (data.ativo ? 'aquecendo' : 'desligado');
+      const isOn = estado === 'aquecendo' || estado === 'resfriando' || data.ativo === true;
       const statusText = isOn ? 'Ligado' : 'Desligado';
       statusAquecedorEl.textContent = statusText;
       statusAquecedorEl.className = `text-xl font-bold ${isOn ? 'text-green-600' : 'text-gray-800'}`;
@@ -287,8 +288,10 @@ class tSecaController {
 
     // Atualizar tempo restante
     const tempoRestanteEl = document.getElementById('tempo-restante');
-    if (tempoRestanteEl && data.restante !== undefined) {
-      const newTime = data.restante > 0 ? `${data.restante} min` : '-- min';
+    if (tempoRestanteEl) {
+      // ESP HTTP: 'restante' em segundos. MQTT: não possui 'restante'.
+      const restante = typeof data.restante === 'number' ? Math.ceil(data.restante / 60) : 0;
+      const newTime = restante > 0 ? `${restante} min` : '-- min';
       if (tempoRestanteEl.textContent !== newTime) {
         this.animateValueChange(tempoRestanteEl);
         tempoRestanteEl.textContent = newTime;
@@ -356,7 +359,8 @@ class tSecaController {
     
     if (btn25 && btn60 && btn120 && btnDesligar) {
       const isConnected = this.isConnected;
-      const isHeaterOn = data.ativo === true;
+      const estado = data.estado || (data.ativo ? 'aquecendo' : 'desligado');
+      const isHeaterOn = estado === 'aquecendo' || estado === 'resfriando' || data.ativo === true;
       
       // Botões de ligar: desabilitados se offline ou se aquecedor já ligado
       const shouldDisableLigar = !isConnected || isHeaterOn;

@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  tseca:
+    image: ghcr.io/PabloCostaT/tseca-control:latest
+    env_file:
+      - tseca.env
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.tseca.rule=Host(`tseca.seulimacasafacil.com.br`)"
+        - "traefik.http.routers.tseca.entrypoints=websecure"
+        - "traefik.http.routers.tseca.tls.certresolver=letsencrypt"
+        - "traefik.http.services.tseca.loadbalancer.server.port=3030"
+        # Opcional: redirecionar raiz para /
+        - "traefik.http.middlewares.tseca-headers.headers.stsSeconds=31536000"
+        - "traefik.http.routers.tseca.middlewares=tseca-headers@docker"
+    networks:
+      - network_public
+
+networks:
+  network_public:
+    external: true
+    name: network_public
+
+

@@ -5,6 +5,7 @@
 const axios = require('axios');
 const config = require('../config/app');
 const logger = require('./logger');
+const mqttClient = require('./mqttClient');
 
 class ESPClient {
   constructor() {
@@ -52,118 +53,65 @@ class ESPClient {
    * Liga o aquecedor por 25 minutos (simulado)
    */
   async ligar25() {
-    logger.info('Simulando ligar aquecedor por 25 minutos');
-    this.simulatedState = {
-      ativo: true,
-      estado: 'aquecendo',
-      minutos: 25,
-      restante: 1500, // 25 minutos em segundos
-      rele1: 1,
-      rele2: 0
-    };
-    
-    return {
-      status: 'ligado 25 min',
-      tempo: 1500,
-      message: 'Aquecedor ligado por 25 minutos (simulado)'
-    };
+    logger.info('Publicando comando MQTT: ligar25');
+    await mqttClient.publishCommand('ligar25');
+    return { status: 'ligado 25 min' };
   }
 
   /**
    * Liga o aquecedor por 60 minutos (simulado)
    */
   async ligar60() {
-    logger.info('Simulando ligar aquecedor por 60 minutos');
-    this.simulatedState = {
-      ativo: true,
-      estado: 'aquecendo',
-      minutos: 60,
-      restante: 3600, // 60 minutos em segundos
-      rele1: 1,
-      rele2: 0
-    };
-    
-    return {
-      status: 'ligado 60 min',
-      tempo: 3600,
-      message: 'Aquecedor ligado por 60 minutos (simulado)'
-    };
+    logger.info('Publicando comando MQTT: ligar60');
+    await mqttClient.publishCommand('ligar60');
+    return { status: 'ligado 60 min' };
   }
 
   /**
    * Liga o aquecedor por 120 minutos (simulado)
    */
   async ligar120() {
-    logger.info('Simulando ligar aquecedor por 120 minutos');
-    this.simulatedState = {
-      ativo: true,
-      estado: 'aquecendo',
-      minutos: 120,
-      restante: 7200, // 120 minutos em segundos
-      rele1: 1,
-      rele2: 0
-    };
-    
-    return {
-      status: 'ligado 120 min',
-      tempo: 7200,
-      message: 'Aquecedor ligado por 120 minutos (simulado)'
-    };
+    logger.info('Publicando comando MQTT: ligar120');
+    await mqttClient.publishCommand('ligar120');
+    return { status: 'ligado 120 min' };
   }
 
   /**
    * Liga o aquecedor (simulado)
    */
   async ligarAquecedor() {
-    logger.info('Simulando ligar aquecedor');
-    this.simulatedState = {
-      ativo: true,
-      estado: 'aquecendo',
-      minutos: 25,
-      restante: 1500,
-      rele1: 1,
-      rele2: 0
-    };
-    
-    return {
-      status: 'ligado',
-      message: 'Aquecedor ligado (simulado)'
-    };
+    logger.info('Publicando comando MQTT: ligar30');
+    await mqttClient.publishCommand('ligar30');
+    return { status: 'ligado' };
   }
 
   /**
    * Desliga o aquecedor (simulado)
    */
   async desligarAquecedor() {
-    logger.info('Simulando desligar aquecedor');
-    this.simulatedState = {
-      ativo: false,
-      estado: 'desligado',
-      minutos: 0,
-      restante: 0,
-      rele1: 0,
-      rele2: 0
-    };
-    
-    return {
-      status: 'desligado',
-      message: 'Aquecedor desligado (simulado)'
-    };
+    logger.info('Publicando comando MQTT: desligar');
+    await mqttClient.publishCommand('desligar');
+    return { status: 'desligado' };
   }
 
   /**
    * Obtém o status atual
    */
   async getStatus() {
+    // Preferir status via MQTT (retained)
+    const mqttStatus = mqttClient.getLastStatus();
+    if (mqttStatus) {
+      return mqttStatus;
+    }
+
+    // Fallback: HTTP direto ao ESP
     try {
-      // Tenta obter o status real do ESP
       const realStatus = await this.request('/status', 'GET');
       logger.debug('Status real obtido do ESP:', realStatus);
       return realStatus;
     } catch (error) {
-      // Se falhar, retorna o status simulado
-      logger.warn('Não foi possível obter status real do ESP, usando simulado');
-      return this.simulatedState;
+      logger.warn('Não foi possível obter status do ESP (MQTT/HTTP)');
+      throw error;
     }
   }
 
@@ -171,20 +119,9 @@ class ESPClient {
    * Configura temporizador (simulado)
    */
   async setTemporizador(minutos) {
-    logger.info(`Simulando configurar temporizador para ${minutos} minutos`);
-    this.simulatedState = {
-      ativo: true,
-      estado: 'aquecendo',
-      minutos: minutos,
-      restante: minutos * 60,
-      rele1: 1,
-      rele2: 0
-    };
-    
-    return {
-      status: `ligado ${minutos} min`,
-      message: `Temporizador configurado para ${minutos} minutos (simulado)`
-    };
+    logger.info(`Publicando comando MQTT JSON: ligar ${minutos} min`);
+    await mqttClient.publishCommand({ cmd: 'ligar', minutos });
+    return { status: `ligado ${minutos} min` };
   }
 }
 
