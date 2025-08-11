@@ -1,565 +1,673 @@
-// ============================= tSeca_2.6.4_GPIO5_GPIO4_DHT14 + MQTT (final) =============================
-// ✅ HTTP, OTA, DHT22, logs, MQTT (QoS1, retained status, LWT) via Traefik:1883
-// ✅ Patches: mqtt.setBufferSize, CORS/OPTIONS, DHT retry, WiFi none sleep, hostname,
-//             log via MQTT (opcional), comando JSON opcional, keepalive/socket timeout
+/*
+  tSeca_temp.ino — Sistema de controle remoto global via VPS
+  Funciona em ESP8266 e ESP32.
+  Comunicação bidirecional com painel web através de VPS
+*/
 
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
-#include <ESP8266HTTPUpdateServer.h>
-#include <ESP8266HTTPClient.h>
-#include <ArduinoJson.h>
-#include <LittleFS.h>
-#include <fauxmoESP.h>
-#include <DHT.h>
+#if defined(ESP32)
+  #include <WiFi.h>
+  #include <WebServer.h>
+  #include <HTTPClient.h>
+  #include <Preferences.h>
+  #include <ArduinoJson.h>
+  Preferences prefs;
+  WebServer server(80);
+#elif defined(ESP8266)
+  #include <ESP8266WiFi.h>
+  #include <ESP8266WebServer.h>
+  #include <ESP8266HTTPClient.h>
+  #include <EEPROM.h>
+  #include <ArduinoJson.h>
+  ESP8266WebServer server(80);
+#else
+  #error "Selecione uma placa ESP8266 ou ESP32."
+#endif
 
-// ===== MQTT (cliente) =====
-#include <PubSubClient.h>
-WiFiClient wifiClient;      // sem TLS por enquanto (TLS depois)
-PubSubClient mqtt(wifiClient);
+// ---------- CONFIGURAÇÕES GLOBAIS ----------
+const char* AP_SSID        = "tSeca_Config";
+const char* AP_PASS        = "12345678";
+const char* DEVICE_ID      = "esp01";
+const char* VPS_BASE_URL   = "https://sua-vps.com"; // ⚠️ ALTERE PARA SUA VPS
+const char* VPS_API_TOKEN  = "seu_token_secreto";   // ⚠️ ALTERE PARA SEU TOKEN
+const uint32_t HEARTBEAT_MS = 30000;                 // 30 segundos
+const uint32_t PULL_MS     = 10000;                  // 10 segundos
 
-// === DEFINIÇÕES DE PINOS ===
-#define RELAY1_PIN 5     // GPIO5 - Relé aquecedor
-#define RELAY2_PIN 4     // GPIO4 - Relé cooler
-#define DHTPIN     14    // GPIO14 - Sensor DHT22
-#define DHTTYPE    DHT22 // Tipo do sensor
+// ---------- PINOS ----------
+const int RELAY1_PIN = 2;  // Aquecedor
+const int RELAY2_PIN = 4;  // Cooler
+const int LED_PIN = 5;     // LED indicador (mudado para evitar conflito)
 
-// === OBJETOS GLOBAIS ===
-ESP8266WebServer server(80);
-ESP8266HTTPUpdateServer httpUpdater;
-fauxmoESP fauxmo;
-DHT dht(DHTPIN, DHTTYPE);
+// ---------- ESTADO GLOBAL ----------
+String savedSSID = "";
+String savedPASS = "";
+uint32_t lastHeartbeat = 0;
+uint32_t lastPull = 0;
+bool deviceOnline = false;
 
-// Estrutura para cadastro
-struct Cadastro {
-  String nome, sobrenome, telefone, email;
-  String ssid, senha;
-  bool aceitou = false, enviado = false;
-} cadastro;
+// Estrutura de status
+struct DeviceStatus {
+  bool ativo = false;
+  String estado = "desligado";
+  int minutos = 0;
+  int restante = 0;
+  bool rele1 = false;
+  bool rele2 = false;
+  float temperatura = 0.0;
+  float umidade = 0.0;
+  unsigned long uptime = 0;
+} status;
 
-// === CONSTANTES DO SISTEMA ===
-const char* idDispositivo   = "esp001";
-const char* versaoFirmware  = "2.6.4";
-const char* endpointLog      = "http://srv01.seulimacasafacil.com.br/webhook/logs";
-const char* endpointCadastro = "http://srv01.seulimacasafacil.com.br/webhook/cadastro";
-const String apiToken       = "123456";
+// ---------- HTML PÁGINA DE CADASTRO ----------
+static const char CADASTRO_HTML[] PROGMEM = R"HTML(
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Configuração tSeca | VPS Global</title>
+<style>
+  :root{--fg:#0d0d0d;--muted:#666;--bg:#f7f7f7;--pri:#2563eb;--ok:#10b981;--err:#ef4444;border:0}
+  *{box-sizing:border-box} body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#fff;color:var(--fg);margin:0}
+  .wrap{max-width:720px;margin:24px auto;padding:16px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  h1{font-size:20px;margin:0} p{color:var(--muted)}
+  .card{background:var(--bg);border-radius:16px;padding:16px;margin:12px 0}
+  .btn{appearance:none;border:1px solid transparent;border-radius:999px;padding:10px 16px;cursor:pointer;font-weight:600}
+  .btn.pri{background:var(--pri);color:#fff}
+  .btn.ghost{background:#fff;border-color:#ddd}
+  .btn.muted{background:#fff;color:var(--muted);border-color:#e5e5e5}
+  form{display:grid;gap:12px}
+  label{font-weight:600;font-size:14px}
+  input,select{width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:12px;font-size:14px}
+  .row{display:grid;grid-template-columns:1fr auto;gap:8px}
+  .status{background:#e8f5e8;border:1px solid #4caf50;border-radius:8px;padding:12px;margin:12px 0}
+  .status.error{background:#ffebee;border-color:#f44336}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🌐 Configuração tSeca - Comunicação Global</h1>
+  </header>
 
-// === MQTT (AJUSTE AQUI) ===
-const char* MQTT_HOST = "srv01.seulimacasafacil.com.br";   // ou mqtt.seulimacasafacil.com.br se criou o A record
-const uint16_t MQTT_PORT = 1883;
-const char* MQTT_USER = "espuser";
-const char* MQTT_PASS = "Esp@2025!";
+  <div class="card">
+    <h3>📡 Status da Conexão</h3>
+    <div id="connectionStatus" class="status">
+      <p><strong>Status:</strong> <span id="wifiStatus">Verificando...</span></p>
+      <p><strong>IP Local:</strong> <span id="localIP">-</span></p>
+      <p><strong>VPS:</strong> <span id="vpsStatus">Verificando...</span></p>
+      <p><strong>Device ID:</strong> <span id="deviceId">esp01</span></p>
+    </div>
+  </div>
 
-// Tópicos
-String topicCmd     = String("tSeca/") + idDispositivo + "/cmd";
-String topicStatus  = String("tSeca/") + idDispositivo + "/status";
-String topicLog     = String("tSeca/") + idDispositivo + "/log"; // opcional
+  <div class="card">
+    <h3>🔧 Configuração Wi-Fi</h3>
+    <p>Configure o Wi-Fi para conectar à internet e comunicar com a VPS.</p>
+    <div class="row" style="margin:8px 0 12px">
+      <button class="btn muted" type="button" id="btnRefresh">Atualizar redes</button>
+      <small id="scanStatus"></small>
+    </div>
 
-// === VARIÁVEIS DE CONTROLE ===
-unsigned long tempoDesligamento = 0;
-unsigned long tempoDesligarCooler = 0;
-bool rele1Ativo = false;
-bool coolerAguardando = false;
-unsigned long proximoEnvioLogs = 0;
-const unsigned long intervaloEnvioLogs = 12UL * 60UL * 60UL * 1000UL; // 12h
+    <form id="wifiForm" method="POST" action="/salvar">
+      <label for="ssid">Rede Wi-Fi (SSID)</label>
+      <select id="ssid" name="ssid" required></select>
+      <label for="pass">Senha Wi-Fi</label>
+      <input id="pass" name="pass" type="password" placeholder="Senha da rede">
+      <div class="row">
+        <button class="btn pri" type="submit">Salvar & Conectar</button>
+        <button class="btn ghost" type="button" id="btnTest">Testar conexão</button>
+      </div>
+      <small id="msg"></small>
+    </form>
+  </div>
 
-#define LOG_MAX 2048
-String bufferLog = "";
+  <div class="card">
+    <h3>📋 Redes Encontradas</h3>
+    <ul id="lista"></ul>
+  </div>
 
-// Sensor
-float temperaturaAtual = NAN;
-float umidadeAtual = NAN;
+  <div class="card">
+    <h3>🎛️ Controles Remotos</h3>
+    <p>Teste os comandos que serão executados remotamente via VPS:</p>
+    <div class="row">
+      <button class="btn pri" onclick="testCommand('ligar25')">Ligar 25min</button>
+      <button class="btn pri" onclick="testCommand('ligar60')">Ligar 60min</button>
+      <button class="btn pri" onclick="testCommand('ligar120')">Ligar 120min</button>
+      <button class="btn ghost" onclick="testCommand('desligar')">Desligar</button>
+    </div>
+    <small id="commandMsg"></small>
+  </div>
+</div>
 
-// Protótipos
-void publicarStatusMqtt();
-void conectarMqtt();
-void publicarLogMqtt(const String& m); // opcional
+<script>
+async function loadScan(){
+  const s = document.getElementById('scanStatus');
+  s.textContent = 'Varredura...';
+  try{
+    const res = await fetch('/scan.json',{cache:'no-store'});
+    const js = await res.json();
+    s.textContent = `Encontradas ${js.networks.length} redes`;
+    const sel = document.getElementById('ssid');
+    const ul  = document.getElementById('lista');
+    sel.innerHTML = '';
+    ul.innerHTML = '';
+    js.networks.forEach(n=>{
+      const opt = document.createElement('option');
+      opt.value = n.ssid; opt.textContent = `${n.ssid} (${n.rssi} dBm)`;
+      sel.appendChild(opt);
 
-// ============================= FUNÇÕES DE UTILIDADE =============================
-void logTxt(const String& msg) {
-  String logMsg = "[" + String(millis() / 1000) + "s] " + msg;
-  Serial.println(logMsg);
-  bufferLog += logMsg + "\n";
-  if (bufferLog.length() > LOG_MAX) bufferLog = bufferLog.substring(bufferLog.length() - LOG_MAX);
-  File f = LittleFS.open("/log.txt", "w");
-  if (f) { f.print(bufferLog); f.close(); }
-
-  // publica log no MQTT (opcional; não retido)
-  publicarLogMqtt(logMsg);
+      const li = document.createElement('li');
+      li.innerHTML = `<div><b>${n.ssid||'(oculta)'}</b><br><small>${n.enc}</small></div>
+                      <div style="min-width:120px;margin-left:8px">
+                        <div class="bar"><div class="fill" style="width:${n.quality}%;background:${n.quality>60?'#10b981':(n.quality>35?'#f59e0b':'#ef4444')}"></div></div>
+                      </div>`;
+      ul.appendChild(li);
+    });
+  }catch(e){
+    s.textContent = 'Falha ao varrer';
+  }
 }
 
-bool validarToken() {
-  if (!server.hasHeader("Authorization")) return false;
-  String tokenHeader = server.header("Authorization");
-  if (tokenHeader.startsWith("Bearer ")) {
-    String token = tokenHeader.substring(7);
-    return token == apiToken;
+async function updateStatus(){
+  try{
+    const res = await fetch('/status.json');
+    const status = await res.json();
+    
+    document.getElementById('wifiStatus').textContent = status.wifi ? 'Conectado ✅' : 'Desconectado ❌';
+    document.getElementById('localIP').textContent = status.ip || '-';
+    document.getElementById('vpsStatus').textContent = status.vps ? 'Online ✅' : 'Offline ❌';
+    
+    const statusDiv = document.getElementById('connectionStatus');
+    if(status.vps){
+      statusDiv.className = 'status';
+    } else {
+      statusDiv.className = 'status error';
+    }
+  }catch(e){
+    console.error('Erro ao atualizar status:', e);
   }
+}
+
+async function testCommand(cmd){
+  const msg = document.getElementById('commandMsg');
+  msg.textContent = `Executando: ${cmd}...`;
+  try{
+    const res = await fetch(`/comando/${cmd}`, {method: 'POST'});
+    const result = await res.json();
+    msg.textContent = `Resultado: ${JSON.stringify(result)}`;
+  }catch(e){
+    msg.textContent = `Erro: ${e.message}`;
+  }
+}
+
+document.getElementById('btnRefresh').onclick = loadScan;
+document.getElementById('wifiForm').onsubmit = async (ev)=>{
+  ev.preventDefault();
+  const f = new FormData(ev.target);
+  const msg = document.getElementById('msg');
+  msg.textContent = 'Salvando...';
+  const res = await fetch('/salvar',{method:'POST',body:new URLSearchParams(f)});
+  const t = await res.text();
+  msg.textContent = t;
+  setTimeout(()=>updateStatus(),1500);
+};
+
+document.getElementById('btnTest').onclick = updateStatus;
+
+// Atualiza status a cada 5 segundos
+loadScan();
+updateStatus();
+setInterval(updateStatus, 5000);
+</script>
+</body>
+</html>
+)HTML";
+
+// ---------- HELPERS ----------
+void startAP(){
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP(AP_SSID, AP_PASS);
+}
+
+void saveCreds(const String& ssid, const String& pass){
+#if defined(ESP32)
+  prefs.begin("wifi", false);
+  prefs.putString("ssid", ssid);
+  prefs.putString("pass", pass);
+  prefs.end();
+#elif defined(ESP8266)
+  EEPROM.begin(256);
+  uint8_t i=0;
+  for (; i<ssid.length() && i<63; ++i) EEPROM.write(i, ssid[i]);
+  EEPROM.write(i++, 0);
+  for (uint8_t j=0; j<pass.length() && j<63; ++j) EEPROM.write(i+j, pass[j]);
+  EEPROM.write(i+pass.length(), 0);
+  EEPROM.commit();
+#endif
+}
+
+void loadCreds(){
+#if defined(ESP32)
+  prefs.begin("wifi", true);
+  savedSSID = prefs.getString("ssid", "");
+  savedPASS = prefs.getString("pass", "");
+  prefs.end();
+#elif defined(ESP8266)
+  EEPROM.begin(256);
+  char ss[64]; char pw[64];
+  uint8_t i=0;
+  for (; i<63; ++i){ ss[i]=EEPROM.read(i); if(ss[i]==0) break; }
+  ss[i]=0; i++;
+  uint8_t k=0;
+  for (; k<63; ++k){ pw[k]=EEPROM.read(i+k); if(pw[k]==0) break; }
+  pw[k]=0;
+  savedSSID = String(ss);
+  savedPASS = String(pw);
+#endif
+}
+
+bool tryConnect(const String& ssid, const String& pass, uint32_t timeoutMs=15000){
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid.c_str(), pass.length()?pass.c_str():nullptr);
+  uint32_t t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis()-t0) < timeoutMs){
+    delay(200);
+  }
+  return WiFi.status() == WL_CONNECTED;
+}
+
+// ---------- COMUNICAÇÃO COM VPS ----------
+bool sendHeartbeat(){
+  if (WiFi.status() != WL_CONNECTED) return false;
+  
+  String url = String(VPS_BASE_URL) + "/api/esp/heartbeat";
+  
+  DynamicJsonDocument doc(1024);
+  doc["device_id"] = DEVICE_ID;
+  
+  // Serializar status individualmente para evitar problemas com ArduinoJson
+  doc["ativo"] = status.ativo;
+  doc["estado"] = status.estado;
+  doc["minutos"] = status.minutos;
+  doc["restante"] = status.restante;
+  doc["rele1"] = status.rele1;
+  doc["rele2"] = status.rele2;
+  doc["temperatura"] = status.temperatura;
+  doc["umidade"] = status.umidade;
+  doc["uptime"] = status.uptime;
+  
+  doc["wifi"] = WiFi.status() == WL_CONNECTED;
+  doc["ip"] = WiFi.localIP().toString();
+  doc["uptime"] = millis() / 1000;
+  
+  String jsonString;
+  serializeJson(doc, jsonString);
+  
+#if defined(ESP32)
+  HTTPClient http;
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", "Bearer " + String(VPS_API_TOKEN));
+  
+  int code = http.POST(jsonString);
+  bool success = (code == 200);
+  http.end();
+  return success;
+#elif defined(ESP8266)
+  HTTPClient http;
+  WiFiClient client;
+  if (http.begin(client, url)){
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", "Bearer " + String(VPS_API_TOKEN));
+    
+    int code = http.POST(jsonString);
+    bool success = (code == 200);
+    http.end();
+    return success;
+  }
+  return false;
+#endif
+}
+
+bool pullCommands(){
+  if (WiFi.status() != WL_CONNECTED) return false;
+  
+  String url = String(VPS_BASE_URL) + "/api/esp/commands?device=" + DEVICE_ID;
+  
+#if defined(ESP32)
+  HTTPClient http;
+  http.begin(url);
+  http.addHeader("Authorization", "Bearer " + String(VPS_API_TOKEN));
+  
+  int code = http.GET();
+  if (code == 200){
+    String payload = http.getString();
+    return processCommand(payload);
+  }
+  http.end();
+#elif defined(ESP8266)
+  HTTPClient http;
+  WiFiClient client;
+  if (http.begin(client, url)){
+    http.addHeader("Authorization", "Bearer " + String(VPS_API_TOKEN));
+    
+    int code = http.GET();
+    if (code == 200){
+      String payload = http.getString();
+      bool processed = processCommand(payload);
+      http.end();
+      return processed;
+    }
+    http.end();
+  }
+#endif
+  
   return false;
 }
 
-void adicionarCORS() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-}
-// ============================= CONTROLE DE RELÉS =============================
-void iniciarTemporizador(int minutos) {
+// ---------- CONTROLE DE RELÉS ----------
+void ligarAquecedor(int minutos){
   digitalWrite(RELAY1_PIN, HIGH);
   digitalWrite(RELAY2_PIN, HIGH);
-  rele1Ativo = true;
-  coolerAguardando = false;
-  tempoDesligamento = millis() + (minutos * 60000UL);
-  logTxt("🔛 Ligado por " + String(minutos) + " minutos");
-  publicarStatusMqtt();
+  
+  status.ativo = true;
+  status.estado = "ligado";
+  status.minutos = minutos;
+  status.restante = minutos * 60;
+  status.rele1 = true;
+  status.rele2 = true;
+  
+  Serial.printf("Aquecedor ligado por %d minutos\n", minutos);
 }
 
-void desligarRele1() {
-  if (rele1Ativo) {
-    digitalWrite(RELAY1_PIN, LOW);
-    rele1Ativo = false;
-    coolerAguardando = true;
-    tempoDesligarCooler = millis() + 60000UL; // 1 min
-    logTxt("⛔ Aquecedor desligado, cooler aguardando 1 minuto");
-    publicarStatusMqtt();
-  }
-}
-
-void desligarCooler() {
-  digitalWrite(RELAY2_PIN, LOW);
-  coolerAguardando = false;
-  logTxt("❄️ Cooler desligado - fim do ciclo");
-  publicarStatusMqtt();
-}
-
-// ============================= ENDPOINTS HTTP =============================
-void handleLigar()    { adicionarCORS(); if (!validarToken()) return server.send(401,"application/json","{\"erro\":\"Token inválido\"}"); iniciarTemporizador(30);  server.send(200,"application/json","{\"status\":\"ligado 30 min\"}"); }
-void handleDesligar() { adicionarCORS(); if (!validarToken()) return server.send(401,"application/json","{\"erro\":\"Token inválido\"}"); desligarRele1(); desligarCooler(); server.send(200,"application/json","{\"status\":\"desligado\"}"); }
-void handleLigar25()  { adicionarCORS(); if (!validarToken()) return server.send(401,"application/json","{\"erro\":\"Token inválido\"}"); iniciarTemporizador(25);  server.send(200,"application/json","{\"status\":\"ligado 25 min\"}"); }
-void handleLigar60()  { adicionarCORS(); if (!validarToken()) return server.send(401,"application/json","{\"erro\":\"Token inválido\"}"); iniciarTemporizador(60);  server.send(200,"application/json","{\"status\":\"ligado 60 min\"}"); }
-void handleLigar120() { adicionarCORS(); if (!validarToken()) return server.send(401,"application/json","{\"erro\":\"Token inválido\"}"); iniciarTemporizador(120); server.send(200,"application/json","{\"status\":\"ligado 120 min\"}"); }
-
-// ============================= PÁGINA DE CADASTRO WI-FI =============================
-String gerarListaRedes() {
-  String lista = "";
-  int n = WiFi.scanNetworks();
-  for (int i = 0; i < n; ++i) {
-    String ssid = WiFi.SSID(i);
-    int rssi = WiFi.RSSI(i);
-    String seguranca = (WiFi.encryptionType(i) == ENC_TYPE_NONE) ? " 🔓" : " 🔒";
-    lista += "<option value='" + ssid + "'>" + ssid + " (" + String(rssi) + "dBm)" + seguranca + "</option>";
-  }
-  return lista;
-}
-
-void handleCadastro() {
-  String statusWifi = WiFi.status() == WL_CONNECTED ? "Conectado ✅" : "Não conectado ⛔";
-  String ipLocal = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : String("-");
-
-  String html = R"rawliteral(
-  <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cadastro Wi‑Fi</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    :root { --bg:#f4f6f8; --card:#fff; --text:#1f2937; --muted:#6b7280; --primary:#0d6efd; --danger:#dc3545; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--text); margin:0; }
-    .container { max-width:520px; margin:30px auto; padding:0 16px; }
-    .card { background:var(--card); border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.06); padding:22px; }
-    h2 { margin:0 0 10px; font-size:22px; display:flex; align-items:center; gap:8px; }
-    .subtitle { color:var(--muted); font-size:13px; margin-bottom:16px; }
-    .row { display:flex; gap:10px; }
-    .row > * { flex:1; }
-    label { font-size:12px; color:var(--muted); display:block; margin:10px 2px 6px; }
-    input, select { width:100%; padding:11px 12px; border:1px solid #e5e7eb; border-radius:10px; outline:none; background:#fff; }
-    input:focus, select:focus { border-color:#b4c6ff; box-shadow:0 0 0 3px rgba(13,110,253,.12); }
-    .actions { display:flex; gap:10px; margin-top:16px; }
-    .btn { appearance:none; border:0; border-radius:10px; padding:11px 14px; font-weight:600; cursor:pointer; }
-    .btn-primary { background:var(--primary); color:#fff; flex:1; }
-    .btn-secondary { background:#e5e7eb; color:#111827; }
-    .btn-danger { background:var(--danger); color:#fff; }
-    .status { background:#f9fafb; border:1px solid #eef2f7; border-radius:12px; padding:10px 12px; font-size:13px; display:flex; justify-content:space-between; align-items:center; }
-    .pw { position:relative; }
-    .pw button { position:absolute; right:8px; top:50%; transform:translateY(-50%); border:0; background:transparent; color:#0d6efd; cursor:pointer; padding:4px 6px; }
-  </style>
-  </head><body>
-    <div class="container">
-      <div class="card">
-        <h2>🌐 Configurar Wi‑Fi</h2>
-        <div class="status"><span><b>Status:</b> %STATUS%</span><span><b>IP:</b> %IP%</span></div>
-        <div class="subtitle">Preencha seus dados e selecione a rede Wi‑Fi. Clique em "Salvar e Conectar".
-        </div>
-        <form action='/salvar' method='GET'>
-          <label>Nome</label>
-          <input name='nome' placeholder='Nome' required>
-          <label>Sobrenome</label>
-          <input name='sobrenome' placeholder='Sobrenome' required>
-          <label>Telefone</label>
-          <input name='telefone' placeholder='Telefone' required>
-          <label>Email</label>
-          <input name='email' type='email' placeholder='Email' required>
-          <label>Wi‑Fi</label>
-          <select name='ssid' required><option value=''>-- Selecione o Wi‑Fi --</option>)rawliteral";
-
-  html += gerarListaRedes();
-  html += R"rawliteral(</select>
-          <label>Senha Wi‑Fi</label>
-          <div class='pw'>
-            <input id='pw' name='senha' type='password' placeholder='Senha Wi‑Fi' required>
-            <button type='button' onclick="const p=document.getElementById('pw'); p.type=p.type==='password'?'text':'password'; this.textContent=p.type==='password'?'Mostrar':'Ocultar'">Mostrar</button>
-          </div>
-          <input type='hidden' name='aceitou' value='1'>
-          <div class='actions'>
-            <button class='btn btn-secondary' type='button' onclick='location.reload()'>Atualizar lista</button>
-            <button class='btn btn-primary' type='submit'>Salvar e Conectar</button>
-          </div>
-        </form>
-        <div class='actions' style='margin-top:8px;'>
-          <a class='btn btn-danger' href='/desconectar'>Desconectar da rede</a>
-        </div>
-      </div>
-    </div>
-  </body></html>)rawliteral";
-
-  html.replace("%STATUS%", statusWifi);
-  html.replace("%IP%", ipLocal);
-  server.send(200, "text/html", html);
-}
-
-void handleSalvarCadastro() {
-  cadastro.nome      = server.arg("nome");
-  cadastro.sobrenome = server.arg("sobrenome");
-  cadastro.telefone  = server.arg("telefone");
-  cadastro.email     = server.arg("email");
-  cadastro.ssid      = server.arg("ssid");
-  cadastro.senha     = server.arg("senha");
-  cadastro.aceitou   = (server.arg("aceitou") == "1");
-  cadastro.enviado   = false;
-
-  salvarCadastro();
-
-  server.send(200, "text/html",
-              "<h2>🔄 Conectando ao Wi‑Fi...</h2><p>O dispositivo vai reiniciar agora.</p>");
-  delay(1000);
-  ESP.restart();
-}
-
-// ============================= DESCONEXÃO / LIMPAR REDE =============================
-void handleDesconectar() {
-  adicionarCORS();
-  // Desconecta do Wi‑Fi e limpa cadastro salvo
-  WiFi.disconnect(true);
-  LittleFS.remove("/cadastro.json");
-  cadastro.nome = ""; cadastro.sobrenome = ""; cadastro.telefone = ""; cadastro.email = "";
-  cadastro.ssid = ""; cadastro.senha = ""; cadastro.aceitou = false; cadastro.enviado = false;
-
-  // Sobe AP de cadastro
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP("Cadastro_tSeca");
-
-  server.send(200, "text/html",
-              "<h2>🔌 Desconectado da rede Wi‑Fi</h2><p>O dispositivo será reiniciado e entrará em modo AP (Cadastro_tSeca)." 
-              "<br/>Conecte-se ao AP e acesse <b>http://192.168.4.1/</b> para configurar novamente.</p>");
-  delay(1000);
-  ESP.restart();
-}
-// ============================= ARQUIVOS LITTLEFS =============================
-bool carregarCadastro() {
-  if (!LittleFS.exists("/cadastro.json")) return false;
-  File f = LittleFS.open("/cadastro.json", "r");
-  if (!f) return false;
-  DynamicJsonDocument doc(1024);
-  if (deserializeJson(doc, f)) return false;
-  f.close();
-
-  cadastro.nome = doc["nome"] | "";
-  cadastro.sobrenome = doc["sobrenome"] | "";
-  cadastro.telefone = doc["telefone"] | "";
-  cadastro.email = doc["email"] | "";
-  cadastro.ssid = doc["ssid"] | "";
-  cadastro.senha = doc["senha"] | "";
-  cadastro.aceitou = doc["aceitou"] | false;
-  cadastro.enviado = doc["enviado"] | false;
-  return true;
-}
-
-void salvarCadastro() {
-  File f = LittleFS.open("/cadastro.json", "w");
-  if (!f) return;
-  DynamicJsonDocument doc(1024);
-  doc["nome"] = cadastro.nome;
-  doc["sobrenome"] = cadastro.sobrenome;
-  doc["telefone"] = cadastro.telefone;
-  doc["email"] = cadastro.email;
-  doc["ssid"] = cadastro.ssid;
-  doc["senha"] = cadastro.senha;
-  doc["aceitou"] = cadastro.aceitou;
-  doc["enviado"] = cadastro.enviado;
-  serializeJson(doc, f);
-  f.close();
-  logTxt("💾 Cadastro salvo");
-}
-
-// ============================= CONEXÃO COM WI-FI SALVO =============================
-void conectarWifiSalvo() {
-  if (cadastro.ssid.length() == 0) return;
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(cadastro.ssid.c_str(), cadastro.senha.c_str());
-  logTxt("🔌 Conectando ao Wi-Fi: " + cadastro.ssid);
-  unsigned long inicio = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - inicio < 15000) {
-    delay(500);
-    Serial.print(".");
-  }
-  if (WiFi.status() == WL_CONNECTED) {
-    logTxt("✅ Wi-Fi conectado! IP: " + WiFi.localIP().toString());
-  } else {
-    logTxt("❌ Falha ao conectar ao Wi-Fi");
-  }
-}
-
-// ============================= ENVIO DE CADASTRO =============================
-void enviarCadastroSeNecessario() {
-  if (WiFi.status() != WL_CONNECTED || cadastro.enviado || !cadastro.aceitou) return;
-  WiFiClient client;
-  HTTPClient http;
-  http.begin(client, endpointCadastro);
-  http.addHeader("Content-Type", "application/json");
-
-  DynamicJsonDocument doc(1024);
-  doc["id_dispositivo"] = idDispositivo;
-  doc["versao"] = versaoFirmware;
-  doc["nome"] = cadastro.nome;
-  doc["sobrenome"] = cadastro.sobrenome;
-  doc["telefone"] = cadastro.telefone;
-  doc["email"] = cadastro.email;
-  doc["ip"] = WiFi.localIP().toString();
-  doc["timestamp"] = millis();
-
-  String payload; serializeJson(doc, payload);
-  int code = http.POST(payload);
-  http.end();
-
-  if (code == 200 || code == 201) { logTxt("✅ Cadastro enviado com sucesso"); cadastro.enviado = true; salvarCadastro(); }
-  else { logTxt("❌ Erro ao enviar cadastro: " + String(code)); }
-}
-
-// ============================= ENDPOINT /status =============================
-void handleStatus() {
-  adicionarCORS();
-  if (!validarToken()) { server.send(401,"application/json","{\"erro\":\"Token inválido\"}"); return; }
-
-  // DHT com retry
-  float t = dht.readTemperature();
-  float h = dht.readHumidity();
-  if (isnan(t) || isnan(h)) { delay(50); t = dht.readTemperature(); h = dht.readHumidity(); }
-  temperaturaAtual = t; umidadeAtual = h;
-
-  int restante = 0, minutos = 0; bool ativo = false; String estado = "desligado";
-  if (rele1Ativo) {
-    restante = max(0, (int)((tempoDesligamento - millis()) / 1000));
-    minutos  = (tempoDesligamento - millis() + 59999UL) / 60000UL;
-    ativo = true; estado = "aquecendo";
-  } else if (coolerAguardando) {
-    restante = max(0, (int)((tempoDesligarCooler - millis()) / 1000));
-    ativo = true; estado = "resfriando";
-  }
-
-  DynamicJsonDocument doc(768);
-  doc["ativo"] = ativo;
-  doc["estado"] = estado;
-  doc["minutos"] = minutos;
-  doc["restante"] = restante;
-  doc["rele1"] = digitalRead(RELAY1_PIN);
-  doc["rele2"] = digitalRead(RELAY2_PIN);
-  doc["temperatura"] = isnan(temperaturaAtual) ? -1 : temperaturaAtual;
-  doc["umidade"] = isnan(umidadeAtual) ? -1 : umidadeAtual;
-  doc["ip"] = WiFi.localIP().toString();
-  doc["versao"] = versaoFirmware;
-  doc["uptime"] = millis() / 1000;
-
-  String resposta; serializeJson(doc, resposta);
-  server.send(200, "application/json", resposta);
-}
-// ============================= MQTT: callback e conectar =============================
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  String msg; msg.reserve(length);
-  for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
-
-  // comandos clássicos
-  if      (msg == "ligar25")  iniciarTemporizador(25);
-  else if (msg == "ligar60")  iniciarTemporizador(60);
-  else if (msg == "ligar120") iniciarTemporizador(120);
-  else if (msg == "ligar30")  iniciarTemporizador(30);
-  else if (msg == "desligar") { desligarRele1(); desligarCooler(); }
-  else {
-    // opcional: comando JSON {"cmd":"ligar","minutos":45}
-    DynamicJsonDocument d(64);
-    if (!deserializeJson(d, msg)) {
-      const char* cmd = d["cmd"] | "";
-      int min = d["minutos"] | -1;
-      if (String(cmd) == "ligar" && min > 0) iniciarTemporizador(min);
-    }
-  }
-
-  logTxt("MQTT cmd: " + msg);
-  publicarStatusMqtt();
-}
-
-void publicarStatusMqtt() {
-  if (!mqtt.connected()) return;
-  DynamicJsonDocument doc(512);
-  doc["online"] = true;
-  doc["estado"] = (rele1Ativo ? "aquecendo" : (coolerAguardando ? "resfriando" : "desligado"));
-  doc["rele1"] = digitalRead(RELAY1_PIN);
-  doc["rele2"] = digitalRead(RELAY2_PIN);
-  doc["temperatura"] = isnan(temperaturaAtual) ? -1 : temperaturaAtual;
-  doc["umidade"] = isnan(umidadeAtual) ? -1 : umidadeAtual;
-  doc["ip"] = WiFi.localIP().toString();
-  doc["versao"] = versaoFirmware;
-  doc["uptime"] = millis() / 1000;
-  String payload; serializeJson(doc, payload);
-  mqtt.publish(topicStatus.c_str(), payload.c_str(), true); // retained
-}
-
-void publicarLogMqtt(const String& m) { // opcional
-  if (!mqtt.connected()) return;
-  mqtt.publish(topicLog.c_str(), m.c_str(), false); // não retém log
-}
-
-void conectarMqtt() {
-  if (!WiFi.isConnected()) return;
-  if (!mqtt.connected()) {
-    // LWT: online=false se desconectar
-    DynamicJsonDocument lwt(64); lwt["online"] = false;
-    String lwtPayload; serializeJson(lwt, lwtPayload);
-
-    mqtt.setServer(MQTT_HOST, MQTT_PORT);
-    mqtt.setCallback(mqttCallback);
-    mqtt.setBufferSize(768);   // JSON maior
-    mqtt.setKeepAlive(60);
-    mqtt.setSocketTimeout(5);
-
-    String clientId = String("tSeca-") + idDispositivo + "-" + String(ESP.getChipId(), HEX);
-    bool ok = mqtt.connect(clientId.c_str(),
-                           MQTT_USER, MQTT_PASS,
-                           topicStatus.c_str(), 1, true, lwtPayload.c_str());
-    if (ok) {
-      mqtt.subscribe(topicCmd.c_str(), 1);
-      logTxt("✅ MQTT conectado");
-      publicarStatusMqtt(); // birth (online=true)
-    } else {
-      logTxt("❌ MQTT falhou rc=" + String(mqtt.state()));
-    }
-  }
-}
-
-// ============================= ENVIAR LOG =============================
-void enviarLogParaServidor(String mensagem) {
-  if (WiFi.status() != WL_CONNECTED) return;
-  WiFiClient client;
-  HTTPClient http;
-  http.begin(client, endpointLog);
-  http.addHeader("Content-Type", "application/json");
-
-  DynamicJsonDocument doc(512);
-  doc["id_dispositivo"] = idDispositivo;
-  doc["versao"] = versaoFirmware;
-  doc["timestamp"] = millis();
-  doc["log"] = mensagem;
-
-  String payload; serializeJson(doc, payload);
-  int code = http.POST(payload);
-  http.end();
-  logTxt(code == 200 ? "📤 Log enviado com sucesso" : "⚠️ Erro envio log: " + String(code));
-}
-
-// ============================= SETUP =============================
-void setup() {
-  Serial.begin(115200);
-  LittleFS.begin();
-  dht.begin();
-  pinMode(RELAY1_PIN, OUTPUT);
-  pinMode(RELAY2_PIN, OUTPUT);
+void desligarAquecedor(){
   digitalWrite(RELAY1_PIN, LOW);
   digitalWrite(RELAY2_PIN, LOW);
-  logTxt("🚀 Sistema inicializando");
+  
+  status.ativo = false;
+  status.estado = "desligado";
+  status.minutos = 0;
+  status.restante = 0;
+  status.rele1 = false;
+  status.rele2 = false;
+  
+  Serial.println("Aquecedor desligado");
+}
 
-  // Wi‑Fi robusto
-  WiFi.setSleepMode(WIFI_NONE_SLEEP);
-  WiFi.hostname(idDispositivo);
+void updateStatus(){
+  if (status.ativo && status.restante > 0) {
+    status.restante--;
+    if (status.restante <= 0) {
+      desligarAquecedor();
+    }
+  }
+  
+  status.uptime = millis() / 1000;
+}
 
-  if (carregarCadastro()) { conectarWifiSalvo(); }
-  if (WiFi.status() != WL_CONNECTED) {
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP("Cadastro_tSeca");
-    logTxt("📶 Modo AP ativo: Cadastro_tSeca");
+bool processCommand(const String& payload){
+  DynamicJsonDocument doc(1024);
+  DeserializationError error = deserializeJson(doc, payload);
+  
+  if (error) {
+    Serial.println("Erro ao processar comando JSON");
+    return false;
+  }
+  
+  // Verificar se é um array de comandos
+  if (doc.containsKey("commands")) {
+    JsonArray commands = doc["commands"];
+    for (int i = 0; i < commands.size(); i++) {
+      JsonObject command = commands[i];
+      String cmd = command["command"] | "";
+      int minutos = command["minutos"] | 0;
+      
+      if (cmd == "ligar25") {
+        ligarAquecedor(25);
+        return true;
+      } else if (cmd == "ligar60") {
+        ligarAquecedor(60);
+        return true;
+      } else if (cmd == "ligar120") {
+        ligarAquecedor(120);
+        return true;
+      } else if (cmd == "desligar") {
+        desligarAquecedor();
+        return true;
+      } else if (cmd == "ligar" && minutos > 0) {
+        ligarAquecedor(minutos);
+        return true;
+      }
+    }
+  } else {
+    // Comando único
+    String command = doc["command"] | "";
+    int minutos = doc["minutos"] | 0;
+    
+    if (command == "ligar25") {
+      ligarAquecedor(25);
+      return true;
+    } else if (command == "ligar60") {
+      ligarAquecedor(60);
+      return true;
+    } else if (command == "ligar120") {
+      ligarAquecedor(120);
+      return true;
+    } else if (command == "desligar") {
+      desligarAquecedor();
+      return true;
+    } else if (command == "ligar" && minutos > 0) {
+      ligarAquecedor(minutos);
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// ---------- HTTP HANDLERS ----------
+void handleRoot(){
+  server.sendHeader("Location","/cadastro",true);
+  server.send(302,"text/plain","");
+}
+
+void handleCadastro(){
+  server.send(200,"text/html", CADASTRO_HTML);
+}
+
+void handleScan(){
+  int n = WiFi.scanNetworks();
+  if (n < 0) {
+    server.send(500, "application/json", "{\"error\":\"Falha ao varrer redes\"}");
+    return;
   }
 
-  // OTA
-  httpUpdater.setup(&server, "/update", "admin", "tseca123");
+  String out = "{\"networks\":[";
+  for (int i=0;i<n;i++){
+    String ssid = WiFi.SSID(i); ssid.replace("\"","\\\"");
+    int32_t rssi = WiFi.RSSI(i);
+    int e = WiFi.encryptionType(i);
+    
+    int q;
+    if (rssi >= -30) q = 100;
+    else if (rssi <= -90) q = 0;
+    else q = (rssi + 90) * 100 / 60; // Mapear de -90 a -30 para 0 a 100
+    
+    String encType = "";
+    
+    // Converter tipo de encriptação para string legível
+    switch(e) {
+      case 0: encType = "Aberta"; break;
+      case 1: encType = "WEP"; break;
+      case 2: encType = "WPA"; break;
+      case 3: encType = "WPA2"; break;
+      case 4: encType = "WPA/WPA2"; break;
+      default: encType = "Desconhecida"; break;
+    }
+    
+    if (i) out += ",";
+    out += "{\"ssid\":\""+ssid+"\",\"rssi\":"+String(rssi)+",\"quality\":"+String(q)+",\"enc\":\""+encType+"\"}";
+  }
+  out += "]}";
+  server.send(200,"application/json",out);
+}
 
-  // Rotas HTTP
-  server.on("/", HTTP_GET, handleCadastro);
-  server.on("/salvar", HTTP_GET, handleSalvarCadastro);
-  server.on("/status", HTTP_GET, handleStatus);
-  server.on("/ligar", HTTP_GET, handleLigar);
-  server.on("/desligar", HTTP_GET, handleDesligar);
-  server.on("/ligar25", HTTP_GET, handleLigar25);
-  server.on("/ligar60", HTTP_GET, handleLigar60);
-  server.on("/ligar120", HTTP_GET, handleLigar120);
-  server.on("/desconectar", HTTP_GET, handleDesconectar);
-
-  // Preflight CORS e 404
-  server.onNotFound([](){
-    if (server.method() == HTTP_OPTIONS) { adicionarCORS(); server.send(204); return; }
-    server.send(404, "application/json", "{\"erro\":\"rota nao encontrada\"}");
-  });
-
-  server.begin();
-  logTxt("🌐 WebServer iniciado");
-
-  // MQTT (se Wi‑Fi já ok)
-  if (WiFi.status() == WL_CONNECTED) {
-    conectarMqtt();
+void handleSalvar(){
+  if (!server.hasArg("ssid")){
+    server.send(400,"text/plain","faltou ssid");
+    return;
+  }
+  String ssid = server.arg("ssid");
+  String pass = server.hasArg("pass") ? server.arg("pass") : "";
+  saveCreds(ssid, pass);
+  bool ok = tryConnect(ssid, pass, 10000);
+  if (ok){
+    server.send(200,"text/plain","Conectado! IP: " + WiFi.localIP().toString());
+  } else {
+    server.send(200,"text/plain","Salvo. Falha ao conectar agora; tentando em background.");
   }
 }
 
-// ============================= LOOP =============================
-void loop() {
+void handleStatus(){
+  wl_status_t st = WiFi.status();
+  String s = "Status: " + String(st) + "\n";
+  if (st == WL_CONNECTED){
+    s += "IP: " + WiFi.localIP().toString() + "\n";
+    s += "SSID: " + WiFi.SSID() + "\n";
+    s += "RSSI: " + String(WiFi.RSSI()) + " dBm\n";
+  }
+  server.send(200,"text/plain",s);
+}
+
+void handleStatusJSON(){
+  DynamicJsonDocument doc(1024);
+  doc["wifi"] = WiFi.status() == WL_CONNECTED;
+  doc["ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "";
+  doc["ssid"] = WiFi.status() == WL_CONNECTED ? WiFi.SSID() : "";
+  doc["rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
+  doc["vps"] = deviceOnline;
+  
+  // Serializar status individualmente para evitar problemas com ArduinoJson
+  doc["ativo"] = status.ativo;
+  doc["estado"] = status.estado;
+  doc["minutos"] = status.minutos;
+  doc["restante"] = status.restante;
+  doc["rele1"] = status.rele1;
+  doc["rele2"] = status.rele2;
+  doc["temperatura"] = status.temperatura;
+  doc["umidade"] = status.umidade;
+  doc["uptime"] = status.uptime;
+  
+  String jsonString;
+  serializeJson(doc, jsonString);
+  server.send(200, "application/json", jsonString);
+}
+
+void handleComando(){
+  DynamicJsonDocument response(256);
+  
+  // Determinar qual comando foi chamado baseado na URI
+  String uri = server.uri();
+  
+  if (uri.indexOf("/comando/ligar25") >= 0) {
+    ligarAquecedor(25);
+    response["success"] = true;
+    response["message"] = "Aquecedor ligado por 25 minutos";
+  } else if (uri.indexOf("/comando/ligar60") >= 0) {
+    ligarAquecedor(60);
+    response["success"] = true;
+    response["message"] = "Aquecedor ligado por 60 minutos";
+  } else if (uri.indexOf("/comando/ligar120") >= 0) {
+    ligarAquecedor(120);
+    response["success"] = true;
+    response["message"] = "Aquecedor ligado por 120 minutos";
+  } else if (uri.indexOf("/comando/desligar") >= 0) {
+    desligarAquecedor();
+    response["success"] = true;
+    response["message"] = "Aquecedor desligado";
+  } else {
+    response["success"] = false;
+    response["message"] = "Comando não reconhecido: " + uri;
+  }
+  
+  String jsonString;
+  serializeJson(response, jsonString);
+  server.send(200, "application/json", jsonString);
+}
+
+// ---------- SETUP/LOOP ----------
+void setup(){
+  delay(200);
+  
+  // Configurar pinos
+  pinMode(RELAY1_PIN, OUTPUT);
+  pinMode(RELAY2_PIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(RELAY1_PIN, LOW);
+  digitalWrite(RELAY2_PIN, LOW);
+  
+#if defined(ESP32)
+  prefs.begin("wifi", true); prefs.end();
+#elif defined(ESP8266)
+  EEPROM.begin(256);
+#endif
+
+  loadCreds();
+
+  // Tenta conectar com credenciais salvas
+  bool ok = false;
+  if (savedSSID.length()){
+    ok = tryConnect(savedSSID, savedPASS, 8000);
+  }
+  if (!ok){
+    startAP(); // Abre AP para configurar
+  }
+
+  // Configurar rotas
+  server.on("/", handleRoot);
+  server.on("/cadastro", handleCadastro);
+  server.on("/scan.json", handleScan);
+  server.on("/salvar", HTTP_POST, handleSalvar);
+  server.on("/status", handleStatus);
+  server.on("/status.json", handleStatusJSON);
+  server.on("/comando/ligar25", HTTP_POST, handleComando);
+  server.on("/comando/ligar60", HTTP_POST, handleComando);
+  server.on("/comando/ligar120", HTTP_POST, handleComando);
+  server.on("/comando/desligar", HTTP_POST, handleComando);
+  
+  server.begin();
+  
+  Serial.begin(115200);
+  Serial.println("tSeca iniciado - Comunicação Global via VPS");
+}
+
+void loop(){
   server.handleClient();
-  fauxmo.handle();
-  enviarCadastroSeNecessario();
 
-  static unsigned long ultimaVerificacao = 0;
-  if (millis() - ultimaVerificacao > 1000) {
-    ultimaVerificacao = millis();
-    if (rele1Ativo && millis() > tempoDesligamento) desligarRele1();
-    if (coolerAguardando && millis() > tempoDesligarCooler) desligarCooler();
+  // Se desconectou, tente reconectar
+  static uint32_t lastRetry = 0;
+  if (WiFi.status()!=WL_CONNECTED && millis()-lastRetry>5000 && savedSSID.length()){
+    lastRetry = millis();
+    tryConnect(savedSSID, savedPASS, 5000);
   }
 
-  if (millis() > proximoEnvioLogs) {
-    enviarLogParaServidor("Sistema funcionando. Uptime: " + String(millis() / 1000) + "s");
-    proximoEnvioLogs = millis() + intervaloEnvioLogs;
+  // Atualizar status
+  updateStatus();
+  
+  // Heartbeat para VPS
+  if (millis() - lastHeartbeat > HEARTBEAT_MS) {
+    deviceOnline = sendHeartbeat();
+    lastHeartbeat = millis();
   }
-
-  // MQTT loop & reconexão
-  if (WiFi.isConnected()) {
-    if (mqtt.connected()) {
-      mqtt.loop();
-    } else {
-      static unsigned long lastTry = 0;
-      if (millis() - lastTry > 5000) { lastTry = millis(); conectarMqtt(); }
-    }
+  
+  // Pull de comandos da VPS
+  if (millis() - lastPull > PULL_MS) {
+    pullCommands();
+    lastPull = millis();
   }
-
-  // Publica status a cada 10s (com DHT retry)
-  static unsigned long lastStatus = 0;
-  if (millis() - lastStatus > 10000) {
-    lastStatus = millis();
-    float t = dht.readTemperature();
-    float h = dht.readHumidity();
-    if (isnan(t) || isnan(h)) { delay(50); t = dht.readTemperature(); h = dht.readHumidity(); }
-    temperaturaAtual = t; umidadeAtual = h;
-    publicarStatusMqtt();
-  }
-
-  yield();
+  
+  // LED indicador
+  digitalWrite(LED_PIN, WiFi.status() == WL_CONNECTED ? HIGH : LOW);
+  
+  delay(100);
 }

@@ -9,6 +9,7 @@ const config = {
   server: {
     port: process.env.PORT || 3030,
     env: process.env.NODE_ENV || 'development',
+    host: process.env.HOST || '0.0.0.0',
   },
 
   // Configurações do ESP8266
@@ -16,6 +17,14 @@ const config = {
     url: process.env.ESP_URL || 'http://192.168.15.14',
     apiToken: process.env.API_TOKEN || '123456',
     deviceId: process.env.ESP_DEVICE_ID || 'esp001',
+  },
+
+  // Configurações da VPS (comunicação global)
+  vps: {
+    baseUrl: process.env.VPS_BASE_URL || 'https://sua-vps.com',
+    apiToken: process.env.VPS_API_TOKEN || 'seu_token_secreto',
+    heartbeatInterval: parseInt(process.env.HEARTBEAT_INTERVAL_MS) || 30000, // 30s
+    commandPollInterval: parseInt(process.env.COMMAND_POLL_INTERVAL_MS) || 10000, // 10s
   },
 
   // Configurações de MQTT (painel)
@@ -35,11 +44,34 @@ const config = {
       windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutos
       max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
     },
+    cors: {
+      origin: process.env.CORS_ORIGIN || '*',
+      credentials: true,
+    },
   },
 
   // Configurações de log
   logging: {
     level: process.env.LOG_LEVEL || 'info',
+    file: process.env.LOG_FILE || 'logs/app.log',
+    maxSize: process.env.LOG_MAX_SIZE || '10m',
+    maxFiles: process.env.LOG_MAX_FILES || '5',
+  },
+
+  // Configurações de banco de dados (futuro)
+  database: {
+    url: process.env.DATABASE_URL || 'mongodb://localhost:27017/tseca',
+    type: process.env.DATABASE_TYPE || 'mongodb', // mongodb, postgresql, sqlite
+  },
+
+  // Configurações de cache (futuro)
+  cache: {
+    type: process.env.CACHE_TYPE || 'memory', // memory, redis
+    redis: {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379', 10),
+      password: process.env.REDIS_PASSWORD || '',
+    },
   },
 };
 

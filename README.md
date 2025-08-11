@@ -2,17 +2,37 @@
 
 Painel de controle web para dispositivo ESP8266 tSeca - Sistema de aquecimento inteligente com monitoramento de temperatura e umidade em tempo real.
 
+## ✅ Status: TOTALMENTE COMPATÍVEL COM ESP8266
+
+O painel está **100% compatível** com o firmware do ESP8266 tSeca v2.6.4. Todas as funcionalidades foram implementadas seguindo exatamente a especificação do ESP.
+
 ## 🚀 Funcionalidades
 
 - **Controle Remoto**: Liga/desliga aquecedor via interface web
 - **Temporizador**: Configuração automática de tempo (25, 60, 120 minutos)
-- **Monitoramento**: Temperatura e umidade em tempo real
+- **Temporizador Personalizado**: Qualquer tempo via endpoint `/tempo`
+- **Monitoramento**: Temperatura e umidade em tempo real via sensor DHT22
 - **Status Visual**: Indicadores coloridos para todos os componentes
 - **Responsivo**: Interface adaptada para desktop e mobile
 - **Seguro**: Autenticação via Bearer token
 - **Auto-Update**: Dados atualizados automaticamente a cada 10 segundos
-- **Configuração Inicial**: Tela para cadastrar IP e API Token
-- **Teclas de Atalho**: Ctrl+1 (ligar), Ctrl+0 (desligar), Ctrl+R (refresh)
+- **Comunicação Bidirecional**: HTTP direto + MQTT como fallback
+- **Teclas de Atalho**: Ctrl+1 (25min), Ctrl+2 (60min), Ctrl+3 (120min), Ctrl+0 (desligar), Ctrl+R (refresh)
+
+## 🔄 Comunicação com ESP8266
+
+### HTTP Direto (Prioritário)
+- **GET** `/status` - Status atual do dispositivo
+- **GET** `/ligar25` - Ligar por 25 minutos
+- **GET** `/ligar60` - Ligar por 60 minutos  
+- **GET** `/ligar120` - Ligar por 120 minutos
+- **GET** `/ligar` - Ligar por 30 minutos (padrão)
+- **GET** `/desligar` - Desligar aquecedor
+
+### MQTT (Fallback)
+- **Tópico**: `tSeca/esp001/cmd`
+- **Comandos**: `ligar25`, `ligar60`, `ligar120`, `ligar30`, `desligar`
+- **JSON**: `{"cmd":"ligar","minutos":45}` para temporizador personalizado
 
 ## 🏗️ Arquitetura
 
@@ -22,6 +42,12 @@ Painel de controle web para dispositivo ESP8266 tSeca - Sistema de aquecimento i
 │   └── auth.js            # Middleware de autenticação
 ├── routes/
 │   └── esp.js             # Rotas da API para comunicação com ESP
+├── controllers/
+│   └── espController.js   # Controller para operações do ESP
+├── utils/
+│   ├── espClient.js       # Cliente para comunicação com ESP
+│   ├── mqttClient.js      # Cliente MQTT para fallback
+│   └── logger.js          # Sistema de logging
 ├── public/
 │   ├── index.html         # Interface web principal
 │   ├── styles.css         # Estilos personalizados

@@ -179,7 +179,19 @@ class tSecaController {
       this.showLoading();
       this.disableAllButtons();
       
-      const result = await this.makeApiCall('/tempo', 'POST', { minutos: minutos });
+      let result;
+      
+      // Usar endpoints específicos para tempos padrão
+      if (minutos === 25) {
+        result = await this.makeApiCall('/ligar25', 'POST');
+      } else if (minutos === 60) {
+        result = await this.makeApiCall('/ligar60', 'POST');
+      } else if (minutos === 120) {
+        result = await this.makeApiCall('/ligar120', 'POST');
+      } else {
+        // Para outros tempos, usar o endpoint de temporizador
+        result = await this.makeApiCall('/tempo', 'POST', { minutos: minutos });
+      }
       
       if (result.success) {
         this.showNotification(`Aquecedor ligado por ${minutos} minutos!`, 'success');
@@ -271,9 +283,12 @@ class tSecaController {
     const statusAquecedorEl = document.getElementById('status-aquecedor');
     const aquecedorIconEl = document.getElementById('aquecedor-icon');
     if (statusAquecedorEl && aquecedorIconEl) {
-      const estado = data.estado || (data.ativo ? 'aquecendo' : 'desligado');
+      // O ESP retorna: estado (aquecendo/resfriando/desligado) e ativo (boolean)
+      const estado = data.estado || 'desligado';
       const isOn = estado === 'aquecendo' || estado === 'resfriando' || data.ativo === true;
-      const statusText = isOn ? 'Ligado' : 'Desligado';
+      const statusText = estado === 'aquecendo' ? 'Aquecendo' : 
+                        estado === 'resfriando' ? 'Resfriando' : 'Desligado';
+      
       statusAquecedorEl.textContent = statusText;
       statusAquecedorEl.className = `text-xl font-bold ${isOn ? 'text-green-600' : 'text-gray-800'}`;
       
@@ -289,8 +304,14 @@ class tSecaController {
     // Atualizar tempo restante
     const tempoRestanteEl = document.getElementById('tempo-restante');
     if (tempoRestanteEl) {
-      // ESP HTTP: 'restante' em segundos. MQTT: não possui 'restante'.
-      const restante = typeof data.restante === 'number' ? Math.ceil(data.restante / 60) : 0;
+      // ESP retorna 'restante' em segundos e 'minutos' em minutos
+      let restante = 0;
+      if (data.restante !== undefined && data.restante > 0) {
+        restante = Math.ceil(data.restante / 60); // Converter segundos para minutos
+      } else if (data.minutos !== undefined && data.minutos > 0) {
+        restante = data.minutos;
+      }
+      
       const newTime = restante > 0 ? `${restante} min` : '-- min';
       if (tempoRestanteEl.textContent !== newTime) {
         this.animateValueChange(tempoRestanteEl);
@@ -334,7 +355,7 @@ class tSecaController {
     document.getElementById('tempo-restante').textContent = '-- min';
     document.getElementById('status-cooler').textContent = 'Offline';
     
-    // Resetar ícones
+    // Resetar ícones para estado offline
     const aquecedorIcon = document.getElementById('aquecedor-icon');
     const coolerIcon = document.getElementById('cooler-icon');
     
@@ -348,6 +369,7 @@ class tSecaController {
       coolerIcon.innerHTML = '<i class="fas fa-snowflake text-xl text-gray-400"></i>';
     }
     
+    // Desabilitar todos os botões quando offline
     this.disableAllButtons();
   }
 
@@ -359,7 +381,8 @@ class tSecaController {
     
     if (btn25 && btn60 && btn120 && btnDesligar) {
       const isConnected = this.isConnected;
-      const estado = data.estado || (data.ativo ? 'aquecendo' : 'desligado');
+      // O ESP retorna: estado (aquecendo/resfriando/desligado) e ativo (boolean)
+      const estado = data.estado || 'desligado';
       const isHeaterOn = estado === 'aquecendo' || estado === 'resfriando' || data.ativo === true;
       
       // Botões de ligar: desabilitados se offline ou se aquecedor já ligado

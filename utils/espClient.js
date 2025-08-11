@@ -50,48 +50,88 @@ class ESPClient {
   }
 
   /**
-   * Liga o aquecedor por 25 minutos (simulado)
+   * Liga o aquecedor por 25 minutos
    */
   async ligar25() {
-    logger.info('Publicando comando MQTT: ligar25');
-    await mqttClient.publishCommand('ligar25');
-    return { status: 'ligado 25 min' };
+    try {
+      // Primeiro tenta via HTTP direto
+      const resultado = await this.request('/ligar25', 'GET');
+      logger.info('Comando ligar25 enviado via HTTP:', resultado);
+      return resultado;
+    } catch (error) {
+      logger.warn('HTTP falhou, tentando MQTT:', error.message);
+      // Fallback para MQTT
+      await mqttClient.publishCommand('ligar25');
+      return { status: 'ligado 25 min' };
+    }
   }
 
   /**
-   * Liga o aquecedor por 60 minutos (simulado)
+   * Liga o aquecedor por 60 minutos
    */
   async ligar60() {
-    logger.info('Publicando comando MQTT: ligar60');
-    await mqttClient.publishCommand('ligar60');
-    return { status: 'ligado 60 min' };
+    try {
+      // Primeiro tenta via HTTP direto
+      const resultado = await this.request('/ligar60', 'GET');
+      logger.info('Comando ligar60 enviado via HTTP:', resultado);
+      return resultado;
+    } catch (error) {
+      logger.warn('HTTP falhou, tentando MQTT:', error.message);
+      // Fallback para MQTT
+      await mqttClient.publishCommand('ligar60');
+      return { status: 'ligado 60 min' };
+    }
   }
 
   /**
-   * Liga o aquecedor por 120 minutos (simulado)
+   * Liga o aquecedor por 120 minutos
    */
   async ligar120() {
-    logger.info('Publicando comando MQTT: ligar120');
-    await mqttClient.publishCommand('ligar120');
-    return { status: 'ligado 120 min' };
+    try {
+      // Primeiro tenta via HTTP direto
+      const resultado = await this.request('/ligar120', 'GET');
+      logger.info('Comando ligar120 enviado via HTTP:', resultado);
+      return resultado;
+    } catch (error) {
+      logger.warn('HTTP falhou, tentando MQTT:', error.message);
+      // Fallback para MQTT
+      await mqttClient.publishCommand('ligar120');
+      return { status: 'ligado 120 min' };
+    }
   }
 
   /**
-   * Liga o aquecedor (simulado)
+   * Liga o aquecedor (padrão 30 minutos)
    */
   async ligarAquecedor() {
-    logger.info('Publicando comando MQTT: ligar30');
-    await mqttClient.publishCommand('ligar30');
-    return { status: 'ligado' };
+    try {
+      // Primeiro tenta via HTTP direto
+      const resultado = await this.request('/ligar', 'GET');
+      logger.info('Comando ligar enviado via HTTP:', resultado);
+      return resultado;
+    } catch (error) {
+      logger.warn('HTTP falhou, tentando MQTT:', error.message);
+      // Fallback para MQTT
+      await mqttClient.publishCommand('ligar30');
+      return { status: 'ligado' };
+    }
   }
 
   /**
-   * Desliga o aquecedor (simulado)
+   * Desliga o aquecedor
    */
   async desligarAquecedor() {
-    logger.info('Publicando comando MQTT: desligar');
-    await mqttClient.publishCommand('desligar');
-    return { status: 'desligado' };
+    try {
+      // Primeiro tenta via HTTP direto
+      const resultado = await this.request('/desligar', 'GET');
+      logger.info('Comando desligar enviado via HTTP:', resultado);
+      return resultado;
+    } catch (error) {
+      logger.warn('HTTP falhou, tentando MQTT:', error.message);
+      // Fallback para MQTT
+      await mqttClient.publishCommand('desligar');
+      return { status: 'desligado' };
+    }
   }
 
   /**
@@ -101,6 +141,7 @@ class ESPClient {
     // Preferir status via MQTT (retained)
     const mqttStatus = mqttClient.getLastStatus();
     if (mqttStatus) {
+      logger.debug('Status obtido via MQTT:', mqttStatus);
       return mqttStatus;
     }
 
@@ -116,11 +157,18 @@ class ESPClient {
   }
 
   /**
-   * Configura temporizador (simulado)
+   * Configura temporizador personalizado
+   * Como o ESP não tem endpoint /tempo, usamos MQTT com comando JSON
    */
   async setTemporizador(minutos) {
-    logger.info(`Publicando comando MQTT JSON: ligar ${minutos} min`);
-    await mqttClient.publishCommand({ cmd: 'ligar', minutos });
+    if (!minutos || !Number.isInteger(minutos) || minutos <= 0) {
+      throw new Error('Minutos deve ser um número inteiro positivo');
+    }
+
+    // O ESP suporta comandos JSON via MQTT
+    const comando = { cmd: 'ligar', minutos: minutos };
+    logger.info(`Publicando comando MQTT JSON: ${JSON.stringify(comando)}`);
+    await mqttClient.publishCommand(comando);
     return { status: `ligado ${minutos} min` };
   }
 }
